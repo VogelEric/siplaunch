@@ -84,68 +84,113 @@ class PredictionDataProcessor:
         return stats
 
     def calculate_event_trend(self, event_data):
-        """Calculate linear regression trend for event data."""
-        # Convert dates to numeric values for regression
+        """Calculate comprehensive linear regression trend analysis for event data."""
+        # Sort data by prediction date for progressive analysis
+        event_data = event_data.sort_values('Date of Prediction')
         x_numeric = event_data['Date of Prediction'].astype(int)
         y_numeric = event_data['Predicted Event Date'].astype(int)
 
-        # Calculate linear regression
-        if len(x_numeric) > 1:
-            coefficients = np.polyfit(x_numeric, y_numeric, 1)
-            slope = coefficients[0]
-            intercept = coefficients[1]
+        n_points = len(x_numeric)
+        progressive_slopes = []
+        progressive_intercepts = []
+        progressive_sizes = []
+        progressive_x = []
+        progressive_y = []
 
-            # Extend line to intersect with real-time reference (where x == y)
-            # Find intersection point: y = slope*x + intercept intersects y = x
-            # So: x = slope*x + intercept => x - slope*x = intercept => x(1-slope) = intercept => x = intercept/(1-slope)
+        # Calculate progressive best fit lines from 3 points to full dataset
+        if n_points >= 3:
+            for subset_size in range(3, n_points + 1):
+                # Take the first 'subset_size' points for progressive analysis
+                x_subset = x_numeric.iloc[:subset_size]
+                y_subset = y_numeric.iloc[:subset_size]
 
-            x_min = x_numeric.min()
-            x_max = x_numeric.max()
-            intersection_x = None
+                coefficients = np.polyfit(x_subset, y_subset, 1)
+                slope = coefficients[0]
+                intercept = coefficients[1]
 
-            # Always extend to real-time intersection and beyond data range
-            if abs(1 - slope) > 1e-10:  # Avoid division by zero
-                intersection_x = intercept / (1 - slope)
-                # Create a range that includes both data and extends to/ beyond intersection
+                intersect = None
+                if (1-slope) > 1e-10:
+                    intersect = intercept / (1-slope)
+
+                progressive_slopes.append(slope)
+                progressive_intercepts.append(intercept)
+                progressive_sizes.append(subset_size)
+                progressive_x.append(pd.to_datetime(x_subset.iloc[-1]))
+                progressive_y.append(pd.to_datetime(intersect))
+
+            # Calculate final best fit on complete dataset
+            final_coefficients = np.polyfit(x_numeric, y_numeric, 1)
+            final_slope = final_coefficients[0]
+            final_intercept = final_coefficients[1]
+
+            # Extend final line to intersect with real-time reference
+            x_min, x_max = x_numeric.min(), x_numeric.max()
+
+            if abs(1 - final_slope) > 1e-10:
+                intersection_x = final_intercept / (1 - final_slope)
                 data_range = x_max - x_min
-                extension_distance = max(data_range * 0.1, 30)  # Extend by 30% of data or 30 days minimum
-
-                # Ensure we include the intersection point
+                extension_distance = max(data_range * 0.1, 30)
                 x_extended_min = x_min - extension_distance
                 x_extended_max = max(x_max, intersection_x) + extension_distance
-
             else:
-                # If slope is very close to 1, just extend the data range
                 x_extended_min = x_min - abs(x_max - x_min) * 0.3
                 x_extended_max = x_max + abs(x_max - x_min) * 0.3
 
             x_line = np.linspace(x_extended_min, x_extended_max, 10)
-            y_line = slope * x_line + intercept
-
-            # Convert back to dates
+            y_line = final_slope * x_line + final_intercept
             x_dates = pd.to_datetime(x_line)
             y_dates = pd.to_datetime(y_line)
-            if intersection_x != None:
-                intersection_date = pd.to_datetime(intersection_x)
+
+            # Calculate intersection date
+            intersection_date = progressive_y[-1]
 
             return {
-                'trend_slope': slope,
-                'trend_intercept': intercept,
+                'trend_slope': final_slope,
+                'trend_intercept': final_intercept,
                 'trend_x_dates': x_dates,
                 'trend_y_dates': y_dates,
                 'realtime_intersection': intersection_date,
+                'progressive_slopes': progressive_slopes,
+                'progressive_intercepts': progressive_intercepts,
+                'progressive_sizes': progressive_sizes,
+                'progressive_x': progressive_x,
+                'progressive_y': progressive_y,
+                'final_data_points': n_points,
                 'has_trend': True
             }
         else:
-            # Not enough data points for regression
             return {
                 'trend_slope': None,
                 'trend_intercept': None,
                 'trend_x_dates': None,
                 'trend_y_dates': None,
                 'realtime_intersection': None,
+                'progressive_slopes': None,
+                'progressive_intercepts': None,
+                'progressive_sizes': None,
+                'progressive_x': None,
+                'progressive_y': None,
+                'final_data_points': n_points,
                 'has_trend': False
             }
+
+    def calculate_weighted_overall_slip_rate(self):
+        """Calculate weighted overall slip rate across all events."""
+        stats = self.calculate_event_statistics()
+        total_predictions = 0
+        weighted_sum = 0
+
+        for event, data in stats.items():
+            if data['has_trend'] and data['trend_slope'] is not None:
+                count = data['count']
+                slope = data['trend_slope']
+                total_predictions += count
+                weighted_sum += slope * count
+
+        if total_predictions > 0:
+            return weighted_sum / total_predictions
+        else:
+            return None
 
 
     def create_timeline_chart(self, event_name=None):
@@ -199,11 +244,50 @@ class PredictionDataProcessor:
                 customdata=event_data['Prediction Window']
             ))
 
-            # Add linear regression trend line using pre-calculated data
+            # Add progressive trend lines using pre-calculated data
             if event_stats[event]['has_trend']:
-                x_regression = event_stats[event]['trend_x_dates']
-                y_regression = event_stats[event]['trend_y_dates']
-                slope = event_stats[event]['trend_slope']
+                trend_data = event_stats[event]
+
+                # Add initial trend line (first 3 points) - faded to show starting point
+                if (trend_data['progressive_sizes'] and len(trend_data['progressive_sizes']) > 0):
+                    initial_slope = trend_data['progressive_slopes'][0]
+                    initial_intercept = trend_data['progressive_intercepts'][0]
+                    progressive_x = trend_data['progressive_x']
+                    progressive_y = trend_data['progressive_y']
+
+                    # Create line for initial trend
+                    x_min_numeric, x_max_numeric = event_data['Date of Prediction'].astype(int).min(), event_data['Date of Prediction'].astype(int).max()
+                    x_initial_line = np.linspace(x_min_numeric, x_max_numeric, 10)
+                    y_initial_line = initial_slope * x_initial_line + initial_intercept
+                    x_initial_dates = pd.to_datetime(x_initial_line)
+                    y_initial_dates = pd.to_datetime(y_initial_line)
+
+                    #print(progressive_y)
+
+                    fig.add_trace(go.Scatter(
+                        x=progressive_x,
+                        y=progressive_y,
+                        mode='lines',
+                        name=f'{event} Intercept Dates',
+                        line=dict(
+                            width=3,
+                            dash='solid',
+                            color=event_color
+                        ),
+                        opacity=0.8,
+                        hovertemplate=
+                        f'<b>{event} Initial Trend (3 points)</b><br>' +
+                        'Slope: %{customdata:.4f}<br>' +
+                        'Prediction Date: %{x}<br>' +
+                        'Predicted Event Date: %{y}<extra></extra>',
+                        customdata=np.full(len(x_initial_dates), initial_slope),
+                        showlegend=False
+                    ))
+
+                # Add final trend line (complete dataset) - solid to show current analysis
+                x_regression = trend_data['trend_x_dates']
+                y_regression = trend_data['trend_y_dates']
+                slope = trend_data['trend_slope']
 
                 # Update date range to include trend line extensions
                 if x_regression is not None and y_regression is not None:
@@ -214,20 +298,20 @@ class PredictionDataProcessor:
                     x=x_regression,
                     y=y_regression,
                     mode='lines',
-                    name=f'{event} Trend',
+                    name=f'{event} Final Trend',
                     line=dict(
-                        width=3,
-                        dash='solid',
+                        width=2,
+                        dash='dot',
                         color=event_color
                     ),
-                    opacity=0.8,
+                    opacity=0.4,
                     hovertemplate=
-                    f'<b>{event} Trend Line</b><br>' +
+                    f'<b>{event} Final Trend (' + str(trend_data["final_data_points"]) + ' points)</b><br>' +
                     'Slope: %{customdata:.4f}<br>' +
                     'Prediction Date: %{x}<br>' +
                     'Predicted Event Date: %{y}<extra></extra>',
                     customdata=np.full(len(x_regression), slope),
-                    showlegend=True
+                    showlegend=False
                 ))
 
         # Add real-time reference line (where prediction date = predicted event date)
@@ -266,7 +350,8 @@ class PredictionDataProcessor:
             xaxis_title='Date of Prediction',
             yaxis_title='Predicted Event Date',
             hovermode='closest',
-            template='plotly_white'
+            template='plotly_white',
+            height=800  # Increased height for better visibility
         )
 
         return fig.to_html(full_html=False, include_plotlyjs=True)
@@ -425,8 +510,22 @@ def main():
     print(f"✅ Generated {output_file}")
     print("📊 Key Statistics:")
     all_stats = processor.calculate_event_statistics()
+
+    # Display individual event statistics
     for event, stats in all_stats.items():
-        print(f"  • {event}: {stats['count']} predictions, slip rate: {stats['trend_slope']:.3f} days/day")
+        progressive_info = ""
+        if stats['has_trend'] and stats['progressive_sizes']:
+            n_subsets = len(stats['progressive_sizes'])
+            progressive_info = f" (analyzed {n_subsets} progressive subsets)"
+
+        print(f"  • {event}: {stats['count']} predictions, slip rate: {stats['trend_slope']:.3f} days/day{progressive_info}")
+
+    # Display weighted overall slip rate
+    overall_slip_rate = processor.calculate_weighted_overall_slip_rate()
+    if overall_slip_rate is not None:
+        print(f"  • Overall (weighted): {overall_slip_rate:.3f} days/day")
+    else:
+        print("  • Overall: Unable to calculate weighted slip rate")
 
     print(f"\n🌐 Open {output_file} in your browser to view the visualization!")
 
