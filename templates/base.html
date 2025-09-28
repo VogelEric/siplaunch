@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Prediction Analysis Tool</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .controls {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .control-label {
+            font-weight: 600;
+            color: #4a5568;
+            min-width: 120px;
+        }
+
+        .control-select {
+            padding: 10px 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            transition: border-color 0.3s;
+        }
+
+        .control-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        @media (min-width: 1024px) {
+            .charts-grid {
+                grid-template-columns: 2fr 1fr;
+            }
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .chart-container h3 {
+            margin-bottom: 20px;
+            color: #2d3748;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+
+        .stats-container {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #f7fafc, #edf2f7);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #718096;
+            font-size: 0.9em;
+        }
+
+        .event-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin: 2px;
+        }
+
+        .event-my_test_event { background: #e6fffa; color: #234e52; }
+        .event-my_test_event_2 { background: #fef5e7; color: #744210; }
+
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            opacity: 0.8;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🔮 Event Prediction Analysis</h1>
+            <p>Interactive visualization of prediction data and trends</p>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label class="control-label">Select Event:</label>
+                <select id="eventSelect" class="control-select">
+                    <option value="all">All Events</option>
+                    {% for event in events %}
+                    <option value="{{ event }}">{{ event }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-container">
+                <h3>Prediction Timeline</h3>
+                <div id="timelineChart">{{ timeline_chart | safe }}</div>
+            </div>
+
+            <div class="stats-container">
+                <h3>Statistics Overview</h3>
+                <div id="statsContent">{{ stats_chart | safe }}</div>
+                <div id="dynamicStats">
+                    {% for event, stats in event_stats.items() %}
+                    <div class="stat-card">
+                        <div class="event-badge event-{{ event|replace(' ', '_')|replace('_', '_') }}">{{ event }}</div>
+                        <div class="stat-value">{{ "%.0f"|format(stats.count) }}</div>
+                        <div class="stat-label">Predictions</div>
+                        <div class="stat-value" style="font-size: 1.5em; margin-top: 10px;">{{ "%.0f"|format(stats.avg_prediction_window) }}</div>
+                        <div class="stat-label">Avg Window (days)</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h3>Prediction Windows Over Time</h3>
+            <div id="windowChart">{{ window_chart | safe }}</div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Generated on {{ generation_date }} • Event Prediction Analysis Tool</p>
+    </div>
+
+    <script>
+        // Event selection handler
+        document.getElementById('eventSelect').addEventListener('change', function() {
+            const selectedEvent = this.value;
+            console.log('Event selected:', selectedEvent);
+
+            // In a full implementation, this would trigger chart updates
+            // For now, we'll just log the selection
+            updateCharts(selectedEvent);
+        });
+
+        function updateCharts(event) {
+            // Placeholder for chart update logic
+            // In a full implementation, this would:
+            // 1. Filter data based on selected event
+            // 2. Recalculate statistics
+            // 3. Update all charts with new data
+
+            console.log('Updating charts for event:', event);
+        }
+
+        // Add some interactivity to stat cards
+        document.querySelectorAll('.stat-card').forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-2px)';
+                this.style.boxShadow = '0 5px 15px rgba(0,0,0,0.1)';
+            });
+
+            card.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0)';
+                this.style.boxShadow = 'none';
+            });
+        });
+    </script>
+</body>
+</html>
