@@ -500,6 +500,7 @@
                 timelineContainer.innerHTML = '<div class="no-data">No data available for selected event</div>';
                 return;
             }
+            timelineContainer.innerHTML = '<div></div>';
 
             // Group data by event for multi-event display
             const eventGroups = {};
@@ -518,8 +519,8 @@
             });
 
             const traces = [];
-            const minDate = parseDate(dateRange.min);
-            const maxDate = parseDate(dateRange.max);
+            let minDate = parseDate(dateRange.min);
+            let maxDate = parseDate(dateRange.max);
 
             Object.entries(eventGroups).forEach(([eventName, eventData]) => {
                 const color = eventColors[eventName];
@@ -565,6 +566,7 @@
 
                         // Add final trend line (extended to show intersection)
                         if (trendAnalysis.finalX.length > 0 && trendAnalysis.finalY.length > 0) {
+                            maxDate = Math.max(maxDate, trendAnalysis.finalX[trendAnalysis.finalX.length-1]);
                             traces.push({
                                 x: trendAnalysis.finalX,
                                 y: trendAnalysis.finalY,
@@ -614,7 +616,7 @@
                 yaxis: { title: 'Predicted Event Date' },
                 hovermode: 'closest',
                 template: 'plotly_white',
-                height: 600
+                height: 800
             };
 
             Plotly.newPlot(timelineContainer, traces, layout, { responsive: true });
@@ -628,6 +630,7 @@
                 windowContainer.innerHTML = '<div class="no-data">No data available for selected event</div>';
                 return;
             }
+            windowContainer.innerHTML = '<div></div>';
 
             // Group data by event
             const eventGroups = {};
