@@ -14,6 +14,7 @@ from jinja2 import Template
 import os
 from pathlib import Path
 import numpy as np
+import argparse
 from pandas._libs.tslibs.np_datetime import OutOfBoundsTimedelta
 
 
@@ -515,13 +516,27 @@ class HTMLGenerator:
         return html_output
 
 
-def main():
-    """Main function to generate the visualization."""
+def main(csv_file=None):
+    """Main function to generate the visualization.
+
+    Args:
+        csv_file (str, optional): Path to CSV file containing prediction data.
+                                 Defaults to 'Example_data.csv' if not provided.
+    """
     print("🚀 Event Prediction Visualization Generator")
     print("=" * 50)
 
-    # Initialize processor with sample data
-    processor = PredictionDataProcessor('Example_data.csv')
+    # Use provided CSV file or default to Example_data.csv
+    if csv_file is None:
+        csv_file = 'Example_data.csv'
+
+    if not os.path.exists(csv_file):
+        print(f"❌ Error: CSV file '{csv_file}' not found!")
+        print("   Please ensure the file exists or provide a valid path.")
+        return
+
+    # Initialize processor with specified data file
+    processor = PredictionDataProcessor(csv_file)
     processor.load_data()
     overall_slip_rate = processor.calculate_weighted_overall_slip_rate()
 
@@ -557,4 +572,34 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # Set up command line argument parsing
+    parser = argparse.ArgumentParser(
+        description='Generate event prediction visualization from CSV data',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  python generate_prediction_viz.py                    # Use default Example_data.csv
+  python generate_prediction_viz.py -f my_data.csv     # Use custom CSV file
+  python generate_prediction_viz.py --file data.csv    # Use custom CSV file
+  python generate_prediction_viz.py --help            # Show this help message
+        """
+    )
+
+    parser.add_argument(
+        '-f', '--file',
+        type=str,
+        default=None,
+        help='Path to CSV file containing prediction data (default: Example_data.csv)'
+    )
+
+    parser.add_argument(
+        '-v', '--version',
+        action='version',
+        version='Event Prediction Visualization Generator v0.2.0'
+    )
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Run main function with provided arguments
+    main(args.file)

@@ -42,16 +42,44 @@ A Python-based tool for creating interactive HTML visualizations from event pred
 
 2. **Run the visualization generator:**
    ```bash
+   # Use default CSV file (Example_data.csv)
    python3 generate_prediction_viz.py
+
+   # Or specify a custom CSV file
+   python3 generate_prediction_viz.py -f your_data.csv
    ```
 
 3. **View the results**: Open `generated/event_prediction_analysis.html` in your web browser
 
+### Command Line Options
+
+The visualization generator supports several command line options:
+
+```bash
+python3 generate_prediction_viz.py [OPTIONS]
+
+Options:
+  -f, --file FILE     Path to CSV file containing prediction data
+                     (default: Example_data.csv)
+  -v, --version       Show program version
+  -h, --help          Show help message and exit
+
+Examples:
+  python3 generate_prediction_viz.py                    # Use default file
+  python3 generate_prediction_viz.py -f my_data.csv     # Use custom file
+  python3 generate_prediction_viz.py --file data.csv    # Use custom file
+```
+
 ### Customizing Input Data
 
-You can modify the CSV file path in the script by editing line 477 in `generate_prediction_viz.py`:
-```python
-processor = PredictionDataProcessor('your_data_file.csv')
+You can specify a custom CSV file when running the generator:
+```bash
+python3 generate_prediction_viz.py -f your_data_file.csv
+```
+
+Or get help on all available options:
+```bash
+python3 generate_prediction_viz.py --help
 ```
 
 ## 📊 Input Data Format
