@@ -14,6 +14,7 @@ from jinja2 import Template
 import os
 from pathlib import Path
 import numpy as np
+from pandas._libs.tslibs.np_datetime import OutOfBoundsTimedelta
 
 
 class PredictionDataProcessor:
@@ -50,7 +51,7 @@ class PredictionDataProcessor:
         return self.data[self.data['Event'] == event_name].copy()
 
     def calculate_event_statistics(self, event_name=None):
-        """Calculate statistical measures for events."""
+        """Calculate statistical measures and linear regression for events."""
         if event_name:
             filtered_data = self.filter_by_event(event_name)
         else:
@@ -60,7 +61,8 @@ class PredictionDataProcessor:
         for event in filtered_data['Event'].unique():
             event_data = filtered_data[filtered_data['Event'] == event]
 
-            stats[event] = {
+            # Basic statistics
+            basic_stats = {
                 'count': len(event_data),
                 'avg_prediction_window': event_data['Prediction Window'].mean(),
                 'median_prediction_window': event_data['Prediction Window'].median(),
@@ -73,12 +75,17 @@ class PredictionDataProcessor:
                 'latest_event': event_data['Predicted Event Date'].max()
             }
 
+            # Linear regression for trend analysis
+            regression_data = self.calculate_event_trend(event_data)
+
+            # Combine basic stats with regression data
+            stats[event] = {**basic_stats, **regression_data}
+
         return stats
 
-    def calculate_linear_regression(self, event_data):
-        """Calculate linear regression for prediction timeline."""
+    def calculate_event_trend(self, event_data):
+        """Calculate linear regression trend for event data."""
         # Convert dates to numeric values for regression
-        
         x_numeric = event_data['Date of Prediction'].astype(int)
         y_numeric = event_data['Predicted Event Date'].astype(int)
 
@@ -94,11 +101,11 @@ class PredictionDataProcessor:
 
             x_min = x_numeric.min()
             x_max = x_numeric.max()
+            intersection_x = None
 
             # Always extend to real-time intersection and beyond data range
             if abs(1 - slope) > 1e-10:  # Avoid division by zero
                 intersection_x = intercept / (1 - slope)
-
                 # Create a range that includes both data and extends to/ beyond intersection
                 data_range = x_max - x_min
                 extension_distance = max(data_range * 0.1, 30)  # Extend by 30% of data or 30 days minimum
@@ -118,11 +125,28 @@ class PredictionDataProcessor:
             # Convert back to dates
             x_dates = pd.to_datetime(x_line)
             y_dates = pd.to_datetime(y_line)
+            if intersection_x != None:
+                intersection_date = pd.to_datetime(intersection_x)
 
-            return x_dates, y_dates, slope, intercept
+            return {
+                'trend_slope': slope,
+                'trend_intercept': intercept,
+                'trend_x_dates': x_dates,
+                'trend_y_dates': y_dates,
+                'realtime_intersection': intersection_date,
+                'has_trend': True
+            }
         else:
             # Not enough data points for regression
-            return None, None, None, None
+            return {
+                'trend_slope': None,
+                'trend_intercept': None,
+                'trend_x_dates': None,
+                'trend_y_dates': None,
+                'realtime_intersection': None,
+                'has_trend': False
+            }
+
 
     def create_timeline_chart(self, event_name=None):
         """Create timeline visualization showing prediction evolution."""
@@ -132,6 +156,9 @@ class PredictionDataProcessor:
         else:
             plot_data = self.data
             title = 'Prediction Timeline: All Events'
+
+        # Get statistics with pre-calculated regression data
+        event_stats = self.calculate_event_statistics(event_name)
 
         fig = go.Figure()
 
@@ -172,13 +199,16 @@ class PredictionDataProcessor:
                 customdata=event_data['Prediction Window']
             ))
 
-            # Calculate and add linear regression trend line
-            x_regression, y_regression, slope, intercept = self.calculate_linear_regression(event_data)
-            if x_regression is not None and y_regression is not None:
-                min_date = min(min_date, x_regression.min())
-                max_date = max(max_date, x_regression.max())
-                # Use the same color as the event markers
-                event_color = event_colors[event]
+            # Add linear regression trend line using pre-calculated data
+            if event_stats[event]['has_trend']:
+                x_regression = event_stats[event]['trend_x_dates']
+                y_regression = event_stats[event]['trend_y_dates']
+                slope = event_stats[event]['trend_slope']
+
+                # Update date range to include trend line extensions
+                if x_regression is not None and y_regression is not None:
+                    min_date = min(min_date, x_regression.min())
+                    max_date = max(max_date, x_regression.max())
 
                 fig.add_trace(go.Scatter(
                     x=x_regression,
@@ -281,17 +311,17 @@ class PredictionDataProcessor:
         stats = self.calculate_event_statistics()
 
         events = list(stats.keys())
-        avg_windows = [stats[event]['avg_prediction_window'] for event in events]
+        slip_rates = [stats[event]['trend_slope'] for event in events]
         counts = [stats[event]['count'] for event in events]
 
         fig = make_subplots(
             rows=1, cols=2,
-            subplot_titles=('Average Prediction Windows by Event', 'Prediction Count by Event'),
+            subplot_titles=('Slip Rate (days/day) by Event', 'Prediction Count by Event'),
             specs=[[{"type": "bar"}, {"type": "bar"}]]
         )
 
         fig.add_trace(
-            go.Bar(x=events, y=avg_windows, name='Avg Window (days)'),
+            go.Bar(x=events, y=slip_rates, name='Slip Rate (days/day)'),
             row=1, col=1
         )
 
@@ -307,6 +337,26 @@ class PredictionDataProcessor:
         )
 
         return fig.to_html(full_html=False, include_plotlyjs=False)
+
+    def create_prediction_summary_table(self):
+        """Create summary table data for all events."""
+        stats = self.calculate_event_statistics()
+
+        # Create table data with all required fields
+        table_data = []
+        for event, data in stats.items():
+            table_data.append({
+                'event_name': event,
+                'most_recent_prediction': data['latest_prediction'],
+                'intercept_date': data['realtime_intersection'],
+                'prediction_count': data['count'],
+                'avg_slip_rate': data['trend_slope']
+            })
+
+        # Sort by most recent prediction date (newest first)
+        table_data.sort(key=lambda x: x['most_recent_prediction'], reverse=True)
+
+        return table_data
 
 
 class HTMLGenerator:
@@ -336,6 +386,9 @@ class HTMLGenerator:
         window_chart = self.processor.create_prediction_window_chart()
         stats_chart = self.processor.create_statistics_chart()
 
+        # Create prediction summary table data
+        summary_table = self.processor.create_prediction_summary_table()
+
         # Render template
         template = Template(self.template)
         html_output = template.render(
@@ -344,6 +397,7 @@ class HTMLGenerator:
             timeline_chart=timeline_chart,
             window_chart=window_chart,
             stats_chart=stats_chart,
+            summary_table=summary_table,
             generation_date=generation_date
         )
 
@@ -372,7 +426,7 @@ def main():
     print("📊 Key Statistics:")
     all_stats = processor.calculate_event_statistics()
     for event, stats in all_stats.items():
-        print(f"  • {event}: {stats['count']} predictions, avg window: {stats['avg_prediction_window']:.0f} days")
+        print(f"  • {event}: {stats['count']} predictions, slip rate: {stats['trend_slope']:.3f} days/day")
 
     print(f"\n🌐 Open {output_file} in your browser to view the visualization!")
 

@@ -6,7 +6,7 @@ A Python-based tool for creating interactive HTML visualizations from event pred
 
 - **Interactive Timeline Charts**: Visualize individual predictions as scatter points with real-time reference line and linear regression trend lines
 - **Prediction Window Analysis**: Track the time windows between predictions and actual events
-- **Statistical Summaries**: View key statistics for each event type
+- **Statistical Summaries**: View key statistics including slip rate trends for each event type
 - **Modern UI**: Clean, responsive web interface with hover effects and smooth interactions
 - **Multiple Event Support**: Handle multiple event types in a single visualization
 - **Export Ready**: Generates standalone HTML files that can be shared or hosted anywhere
@@ -74,6 +74,7 @@ my_test_event_2,1/1/2025,7/1/2025,
 The tool generates a single HTML file containing:
 
 - **Prediction Timeline**: Scatter plot showing individual predictions as points with linear regression trend lines and a real-time reference line (diagonal where x=y) for comprehensive trend analysis
+- **Statistics Overview**: Bar charts showing slip rate (days/day) trends and prediction counts by event
 - **Prediction Windows**: Visualization of time windows between predictions and events
 - **Statistical Summary**: Bar charts showing average prediction windows and prediction counts by event
 - **Interactive Controls**: Dropdown to filter by specific events
