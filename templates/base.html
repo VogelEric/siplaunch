@@ -218,6 +218,31 @@
         .summary-table tbody tr:last-child td {
             border-bottom: none;
         }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-style: italic;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+            font-style: italic;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border: 2px dashed #ddd;
+        }
+
+        .chart-container {
+            transition: opacity 0.3s ease;
+        }
+
+        .chart-container.loading {
+            opacity: 0.7;
+        }
     </style>
 </head>
 
@@ -230,13 +255,14 @@
 
         <div class="controls">
             <div class="control-group">
-                <label class="control-label">Select Event:</label>
+                <label class="control-label">Filter by Event:</label>
                 <select id="eventSelect" class="control-select">
                     <option value="all">All Events</option>
                     {% for event in events %}
                     <option value="{{ event }}">{{ event }}</option>
                     {% endfor %}
                 </select>
+                <button id="resetButton" class="control-select" style="margin-left: 10px; background: #667eea; color: white; border: none; cursor: pointer;">Reset View</button>
             </div>
         </div>
 
@@ -284,24 +310,427 @@
     </div>
 
     <script>
+        // Embedded data for client-side filtering
+        const predictionData = {{ embedded_data.raw_data | tojson }};
+        const availableEvents = {{ embedded_data.events | tojson }};
+        const dateRange = {{ embedded_data.date_range | tojson }};
+
+        // State management
+        let currentEvent = 'all';
+        let chartsLoading = false;
+
         // Event selection handler
         document.getElementById('eventSelect').addEventListener('change', function () {
             const selectedEvent = this.value;
-            console.log('Event selected:', selectedEvent);
-
-            // In a full implementation, this would trigger chart updates
-            // For now, we'll just log the selection
-            updateCharts(selectedEvent);
+            if (selectedEvent !== currentEvent) {
+                currentEvent = selectedEvent;
+                updateCharts(selectedEvent);
+            }
         });
 
-        function updateCharts(event) {
-            // Placeholder for chart update logic
-            // In a full implementation, this would:
-            // 1. Filter data based on selected event
-            // 2. Recalculate statistics
-            // 3. Update all charts with new data
+        // Reset button handler
+        document.getElementById('resetButton').addEventListener('click', function () {
+            document.getElementById('eventSelect').value = 'all';
+            currentEvent = 'all';
+            updateCharts('all');
+        });
 
-            console.log('Updating charts for event:', event);
+        function filterDataByEvent(event) {
+            // Filter the embedded data by selected event
+            if (event === 'all') {
+                return predictionData;
+            }
+            return predictionData.filter(item => item.event === event);
+        }
+
+        function parseDate(dateString) {
+            // Parse date string to Date object
+            return new Date(dateString);
+        }
+
+        function calculateProgressiveTrend(eventData) {
+            // Calculate comprehensive linear regression trend analysis for event data
+            // Sort data by prediction date for progressive analysis
+            const sortedData = [...eventData].sort((a, b) =>
+                parseDate(a.prediction_date) - parseDate(b.prediction_date)
+            );
+
+            const nPoints = sortedData.length;
+            const progressiveSlopes = [];
+            const progressiveIntercepts = [];
+            const progressiveSizes = [];
+            const progressiveX = [];
+            const progressiveY = [];
+
+            // Calculate progressive best fit lines from 3 points to full dataset
+            if (nPoints >= 3) {
+                for (let subsetSize = 3; subsetSize <= nPoints; subsetSize++) {
+                    // Take the first 'subsetSize' points for progressive analysis
+                    const subset = sortedData.slice(0, subsetSize);
+                    const xValues = subset.map(item => parseDate(item.prediction_date).getTime());
+                    const yValues = subset.map(item => parseDate(item.predicted_event_date).getTime());
+
+                    // Simple linear regression
+                    const n = xValues.length;
+                    const sumX = xValues.reduce((a, b) => a + b, 0);
+                    const sumY = yValues.reduce((a, b) => a + b, 0);
+                    const sumXY = xValues.reduce((sum, x, i) => sum + x * yValues[i], 0);
+                    const sumXX = xValues.reduce((sum, x) => sum + x * x, 0);
+
+                    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+                    const intercept = (sumY - slope * sumX) / n;
+
+                    // Calculate intersection with real-time reference (y = x)
+                    let intersectDate = null;
+                    if (Math.abs(1 - slope) > 1e-10) {
+                        const intersectTimestamp = intercept / (1 - slope);
+                        intersectDate = new Date(intersectTimestamp);
+                    }
+
+                    progressiveSlopes.push(slope);
+                    progressiveIntercepts.push(intercept);
+                    progressiveSizes.push(subsetSize);
+                    progressiveX.push(parseDate(subset[subsetSize - 1].prediction_date));
+                    progressiveY.push(intersectDate);
+                }
+
+                // Calculate final best fit on complete dataset
+                const xFinal = sortedData.map(item => parseDate(item.prediction_date).getTime());
+                const yFinal = sortedData.map(item => parseDate(item.predicted_event_date).getTime());
+                const nFinal = xFinal.length;
+                const sumXFinal = xFinal.reduce((a, b) => a + b, 0);
+                const sumYFinal = yFinal.reduce((a, b) => a + b, 0);
+                const sumXYFinal = xFinal.reduce((sum, x, i) => sum + x * yFinal[i], 0);
+                const sumXXFinal = xFinal.reduce((sum, x) => sum + x * x, 0);
+
+                const finalSlope = (nFinal * sumXYFinal - sumXFinal * sumYFinal) / (nFinal * sumXXFinal - sumXFinal * sumXFinal);
+                const finalIntercept = (sumYFinal - finalSlope * sumXFinal) / nFinal;
+
+                // Extend final line to intersect with real-time reference
+                const xMin = Math.min(...xFinal);
+                const xMax = Math.max(...xFinal);
+
+                let xExtendedMin, xExtendedMax, finalX, finalY;
+                if (Math.abs(1 - finalSlope) > 1e-10) {
+                    const intersectionX = finalIntercept / (1 - finalSlope);
+                    const dataRange = xMax - xMin;
+                    const extensionDistance = Math.max(dataRange * 0.1, 30 * 24 * 60 * 60 * 1000); // 30 days in ms
+                    xExtendedMin = xMin - extensionDistance;
+                    xExtendedMax = Math.max(xMax, intersectionX) + extensionDistance;
+                } else {
+                    xExtendedMin = xMin - Math.abs(xMax - xMin) * 0.3;
+                    xExtendedMax = xMax + Math.abs(xMax - xMin) * 0.3;
+                }
+
+                // Generate line points
+                finalX = [];
+                finalY = [];
+                const steps = 50;
+                const stepSize = (xExtendedMax - xExtendedMin) / steps;
+                for (let i = 0; i <= steps; i++) {
+                    const x = xExtendedMin + i * stepSize;
+                    const y = finalSlope * x + finalIntercept;
+                    finalX.push(new Date(x));
+                    finalY.push(new Date(y));
+                }
+
+                // Final intersection date from progressive analysis
+                const finalIntersectionDate = progressiveY[progressiveY.length - 1];
+
+                return {
+                    hasTrend: true,
+                    finalSlope: finalSlope,
+                    finalIntercept: finalIntercept,
+                    finalX: finalX,
+                    finalY: finalY,
+                    realtimeIntersection: finalIntersectionDate,
+                    progressiveSlopes: progressiveSlopes,
+                    progressiveIntercepts: progressiveIntercepts,
+                    progressiveSizes: progressiveSizes,
+                    progressiveX: progressiveX,
+                    progressiveY: progressiveY,
+                    finalDataPoints: nPoints
+                };
+            } else {
+                return {
+                    hasTrend: false,
+                    finalSlope: null,
+                    finalIntercept: null,
+                    finalX: [],
+                    finalY: [],
+                    realtimeIntersection: null,
+                    progressiveSlopes: [],
+                    progressiveIntercepts: [],
+                    progressiveSizes: [],
+                    progressiveX: [],
+                    progressiveY: [],
+                    finalDataPoints: nPoints
+                };
+            }
+        }
+
+        function updateCharts(event) {
+            // Main function to update all charts based on event selection
+            if (chartsLoading) return; // Prevent multiple simultaneous updates
+
+            chartsLoading = true;
+            showLoadingState();
+
+            setTimeout(() => {
+                try {
+                    const filteredData = filterDataByEvent(event);
+                    updateTimelineChart(filteredData, event);
+                    updateWindowChart(filteredData, event);
+                    updateSummaryTable(filteredData, event);
+                    hideLoadingState();
+                    chartsLoading = false;
+                } catch (error) {
+                    console.error('Error updating charts:', error);
+                    hideLoadingState();
+                    chartsLoading = false;
+                }
+            }, 100); // Small delay for better UX
+        }
+
+        function updateTimelineChart(data, event) {
+            // Update the timeline chart with filtered data
+            const timelineContainer = document.getElementById('timelineChart');
+
+            if (data.length === 0) {
+                timelineContainer.innerHTML = '<div class="no-data">No data available for selected event</div>';
+                return;
+            }
+
+            // Group data by event for multi-event display
+            const eventGroups = {};
+            data.forEach(item => {
+                if (!eventGroups[item.event]) {
+                    eventGroups[item.event] = [];
+                }
+                eventGroups[item.event].push(item);
+            });
+
+            // Generate colors for events
+            const colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'];
+            const eventColors = {};
+            Object.keys(eventGroups).forEach((eventName, index) => {
+                eventColors[eventName] = colors[index % colors.length];
+            });
+
+            const traces = [];
+            const minDate = parseDate(dateRange.min);
+            const maxDate = parseDate(dateRange.max);
+
+            Object.entries(eventGroups).forEach(([eventName, eventData]) => {
+                const color = eventColors[eventName];
+
+                // Add scatter points
+                const predictionDates = eventData.map(item => parseDate(item.prediction_date));
+                const predictedDates = eventData.map(item => parseDate(item.predicted_event_date));
+                const windows = eventData.map(item => item.prediction_window);
+
+                traces.push({
+                    x: predictionDates,
+                    y: predictedDates,
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: eventName,
+                    marker: { color: color, size: 8 },
+                    hovertemplate: `<b>${eventName}</b><br>Prediction: %{x}<br>Event: %{y}<br>Window: %{customdata} days<extra></extra>`,
+                    customdata: windows
+                });
+
+                // Add progressive trend lines using sophisticated analysis
+                if (eventData.length >= 3) {
+                    const trendAnalysis = calculateProgressiveTrend(eventData);
+
+                    if (trendAnalysis.hasTrend) {
+                        // Add progressive intercept points (showing evolution of intercept dates)
+                        if (trendAnalysis.progressiveX.length > 0 && trendAnalysis.progressiveY.length > 0) {
+                            traces.push({
+                                x: trendAnalysis.progressiveX,
+                                y: trendAnalysis.progressiveY,
+                                mode: 'lines',
+                                type: 'scatter',
+                                name: `${eventName} Intercept Evolution`,
+                                line: { color: color, width: 3, dash: 'solid' },
+                                opacity: 0.8,
+                                hovertemplate: `<b>${eventName} Trend Evolution</b><br>` +
+                                    'Analysis Date: %{x}<br>' +
+                                    'Intercept Date: %{y}<br>' +
+                                    '<extra></extra>',
+                                showlegend: false
+                            });
+                        }
+
+                        // Add final trend line (extended to show intersection)
+                        if (trendAnalysis.finalX.length > 0 && trendAnalysis.finalY.length > 0) {
+                            traces.push({
+                                x: trendAnalysis.finalX,
+                                y: trendAnalysis.finalY,
+                                mode: 'lines',
+                                type: 'scatter',
+                                name: `${eventName} Final Trend`,
+                                line: { color: color, width: 2, dash: 'dot' },
+                                opacity: 0.6,
+                                hovertemplate: `<b>${eventName} Final Trend</b><br>` +
+                                    'Slope: %{customdata:.4f} days/day<br>' +
+                                    'Prediction Date: %{x}<br>' +
+                                    'Predicted Event Date: %{y}<extra></extra>',
+                                customdata: new Array(trendAnalysis.finalX.length).fill(trendAnalysis.finalSlope),
+                                showlegend: false
+                            });
+                        }
+                    }
+                }
+            });
+
+            // Add reference line
+            traces.push({
+                x: [minDate, maxDate],
+                y: [minDate, maxDate],
+                mode: 'lines',
+                type: 'scatter',
+                name: 'Real Time',
+                line: { color: 'rgba(128, 128, 128, 0.5)', width: 2, dash: 'dash' },
+                hovertemplate: 'Real Time Reference<br>Date: %{x}<extra></extra>'
+            });
+
+            // Add today line
+            const today = new Date();
+            traces.push({
+                x: [today, today],
+                y: [minDate, maxDate],
+                mode: 'lines',
+                type: 'scatter',
+                name: 'Today',
+                line: { color: 'rgba(255, 0, 0, 0.8)', width: 3, dash: 'dot' },
+                hovertemplate: 'Today<br>Date: %{x}<extra></extra>'
+            });
+
+            const layout = {
+                title: event === 'all' ? 'Prediction Timeline: All Events' : `Prediction Timeline: ${event}`,
+                xaxis: { title: 'Date of Prediction' },
+                yaxis: { title: 'Predicted Event Date' },
+                hovermode: 'closest',
+                template: 'plotly_white',
+                height: 600
+            };
+
+            Plotly.newPlot(timelineContainer, traces, layout, { responsive: true });
+        }
+
+        function updateWindowChart(data, event) {
+            // Update the prediction window chart with filtered data
+            const windowContainer = document.getElementById('windowChart');
+
+            if (data.length === 0) {
+                windowContainer.innerHTML = '<div class="no-data">No data available for selected event</div>';
+                return;
+            }
+
+            // Group data by event
+            const eventGroups = {};
+            data.forEach(item => {
+                if (!eventGroups[item.event]) {
+                    eventGroups[item.event] = [];
+                }
+                eventGroups[item.event].push(item);
+            });
+
+            const traces = [];
+            Object.entries(eventGroups).forEach(([eventName, eventData]) => {
+                const predictionDates = eventData.map(item => parseDate(item.prediction_date));
+                const windows = eventData.map(item => item.prediction_window);
+
+                traces.push({
+                    x: predictionDates,
+                    y: windows,
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: eventName,
+                    hovertemplate: `<b>${eventName}</b><br>Prediction: %{x}<br>Window: %{y} days<extra></extra>`
+                });
+            });
+
+            const layout = {
+                title: event === 'all' ? 'Prediction Windows: All Events' : `Prediction Windows: ${event}`,
+                xaxis: { title: 'Date of Prediction' },
+                yaxis: { title: 'Prediction Window (days)' },
+                hovermode: 'closest',
+                template: 'plotly_white',
+                height: 400
+            };
+
+            Plotly.newPlot(windowContainer, traces, layout, { responsive: true });
+        }
+
+        function updateSummaryTable(data, event) {
+            // Update the summary table with filtered data
+            const tableBody = document.querySelector('.summary-table tbody');
+
+            if (data.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="5" class="no-data">No data available for selected event</td></tr>';
+                return;
+            }
+
+            // Group and summarize data by event with trend analysis
+            const eventSummaries = {};
+            const eventsInData = [...new Set(data.map(item => item.event))];
+
+            eventsInData.forEach(eventName => {
+                const eventData = data.filter(item => item.event === eventName);
+                const trendAnalysis = calculateProgressiveTrend(eventData);
+
+                eventSummaries[eventName] = {
+                    event: eventName,
+                    predictions: eventData,
+                    most_recent: eventData.length > 0 ?
+                        eventData.map(item => parseDate(item.prediction_date)).reduce((latest, current) =>
+                            current > latest ? current : latest
+                        ) : new Date(0),
+                    intercept_date: trendAnalysis.realtimeIntersection,
+                    avg_slip_rate: trendAnalysis.finalSlope,
+                    count: eventData.length,
+                    has_trend: trendAnalysis.hasTrend
+                };
+            });
+
+            const summaries = Object.values(eventSummaries);
+            summaries.sort((a, b) => b.most_recent - a.most_recent);
+
+            const rows = summaries.map(summary => {
+                const interceptDateStr = summary.intercept_date ?
+                    summary.intercept_date.toISOString().split('T')[0] : 'N/A';
+                const slipRateStr = summary.has_trend ?
+                    `${summary.avg_slip_rate.toFixed(3)} days/day` : 'N/A';
+
+                return `
+                    <tr>
+                        <td><strong>${summary.event}</strong></td>
+                        <td>${summary.most_recent.toISOString().split('T')[0]}</td>
+                        <td>${slipRateStr}</td>
+                        <td>${summary.count}</td>
+                        <td><strong>${interceptDateStr}</strong></td>
+                    </tr>
+                `;
+            }).join('');
+
+            tableBody.innerHTML = rows;
+        }
+
+        function showLoadingState() {
+            // Show loading indicators on charts
+            const containers = ['timelineChart', 'windowChart'];
+            containers.forEach(id => {
+                const container = document.getElementById(id);
+                container.innerHTML = '<div class="loading">Updating chart...</div>';
+            });
+        }
+
+        function hideLoadingState() {
+            // Hide loading indicators
+            // Loading state is handled by chart updates
         }
 
         // Add some interactivity to stat cards
@@ -315,6 +744,11 @@
                 this.style.transform = 'translateY(0)';
                 this.style.boxShadow = 'none';
             });
+        });
+
+        // Initialize with all events on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            updateCharts('all');
         });
     </script>
 </body>

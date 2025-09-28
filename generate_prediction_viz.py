@@ -443,6 +443,28 @@ class PredictionDataProcessor:
 
         return table_data
 
+    def get_serializable_data(self):
+        """Get raw data in a format suitable for JavaScript embedding."""
+        # Convert data to JSON-serializable format
+        data_list = []
+        for _, row in self.data.iterrows():
+            data_list.append({
+                'event': row['Event'],
+                'prediction_date': row['Date of Prediction'].strftime('%Y-%m-%d'),
+                'predicted_event_date': row['Predicted Event Date'].strftime('%Y-%m-%d'),
+                'prediction_window': int(row['Prediction Window']),
+                'tag': row.get('Tag', '') if 'Tag' in row else ''
+            })
+
+        return {
+            'raw_data': data_list,
+            'events': sorted(self.data['Event'].unique().tolist()),
+            'date_range': {
+                'min': self.data['Date of Prediction'].min().strftime('%Y-%m-%d'),
+                'max': self.data['Date of Prediction'].max().strftime('%Y-%m-%d')
+            }
+        }
+
 
 class HTMLGenerator:
     """Generates the final HTML output with embedded charts."""
@@ -466,6 +488,9 @@ class HTMLGenerator:
         stats = self.processor.calculate_event_statistics()
         generation_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+        # Get serializable data for JavaScript embedding
+        embedded_data = self.processor.get_serializable_data()
+
         # Create charts
         timeline_chart = self.processor.create_timeline_chart()
         window_chart = self.processor.create_prediction_window_chart()
@@ -483,7 +508,8 @@ class HTMLGenerator:
             window_chart=window_chart,
             stats_chart=stats_chart,
             summary_table=summary_table,
-            generation_date=generation_date
+            generation_date=generation_date,
+            embedded_data=embedded_data
         )
 
         return html_output
