@@ -497,6 +497,7 @@ def main():
     # Initialize processor with sample data
     processor = PredictionDataProcessor('Example_data.csv')
     processor.load_data()
+    overall_slip_rate = processor.calculate_weighted_overall_slip_rate()
 
     # Generate HTML
     generator = HTMLGenerator(processor)
@@ -521,7 +522,6 @@ def main():
         print(f"  • {event}: {stats['count']} predictions, slip rate: {stats['trend_slope']:.3f} days/day{progressive_info}")
 
     # Display weighted overall slip rate
-    overall_slip_rate = processor.calculate_weighted_overall_slip_rate()
     if overall_slip_rate is not None:
         print(f"  • Overall (weighted): {overall_slip_rate:.3f} days/day")
     else:
